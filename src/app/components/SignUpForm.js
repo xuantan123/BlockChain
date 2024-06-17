@@ -1,18 +1,27 @@
 'use client'
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Form, Input } from 'antd';
 import { ethers } from 'ethers';
 import { parseEther } from 'ethers/lib/utils';
+import contractABI from '@/app/components/abi.json'
 import '@/app/type/SignUpForm.css'
+
+const contractAddress = '0x47a068adfCA61245BE0Bae7388f6f56B4e6C2575';
 
 const SignUpForm = () => {
   const [walletAddress, setWalletAddress] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [manualAddress, setManualAddress] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
   const [amount, setAmount] = useState('');
+  const [contractInstance, setContractInstance] = useState(null);
+  const [transactionCount, setTransactionCount] = useState(0);
+  const [balance, setBalance] = useState('');
+  const [receiverBalance, setReceiverBalance] = useState('');
 
+  useEffect(() => {
+    console.log('Contract abi',contractABI);
+  },[]);
   const connectWallet = async () => {
     if (typeof window.ethereum !== 'undefined') {
       try {
@@ -24,13 +33,26 @@ const SignUpForm = () => {
 
         setWalletAddress(address);
         setIsConnected(true);
-        setErrorMessage('');
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        const signer = provider.getSigner();
+
+        const balance = await provider.getBalance(address);
+        setBalance(ethers.utils.formatEther(balance));
+         
+
+        const nonce = await provider.getTransactionCount(address);
+        setTransactionCount(nonce);
+
+        const contract = new ethers.Contract(contractAddress, contractABI,signer);
+        setContractInstance(contract);
+        console.log('Đã kết nối với hợp đồng:', contract.interface.getFunction('mint'));
       } catch (error) {
         console.log(error);
         alert('Không thể kết nối với MetaMask');
       }
     } else {
       alert('MetaMask chưa được cài đặt');
+      setReceiverBalance('');
     }
   };
 
@@ -41,12 +63,21 @@ const SignUpForm = () => {
     setAmount(e.target.value);
   };
 
-  const handleManualConnect = () => {
-    setWalletAddress(manualAddress);
-    setIsConnected(true);
-    setManualAddress('');
-    setErrorMessage('');
-  };
+  const getReceiverBalance = async () => {
+    try {
+      if (!ethers.utils.isAddress(manualAddress)) {
+        alert('Địa chỉ ví không hợp lệ');
+        return;
+      }
+
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const balance = await provider.getBalance(manualAddress);
+      setReceiverBalance(ethers.utils.formatEther(balance));
+    } catch (error) {
+      console.error('Failed to fetch receiver balance:', error);
+      alert('Failed to fetch receiver balance');
+    }
+  }
   const handleSubmit = async () => {
     try {
       if (!ethers.utils.isAddress(manualAddress)) {
@@ -58,24 +89,42 @@ const SignUpForm = () => {
         alert('Số lượng ETH không hợp lệ');
         return;
       }
-
+      if(!contractInstance){
+        alert('Hợp đồng chưa được kết nối');
+        return;
+      }
+      
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
-
-   
+      const contract = new ethers.Contract(contractAddress,contractABI,signer);
       
-          const tx = await signer.sendTransaction({
-            to: manualAddress,
-            value: ethers.utils.parseEther(amount),
+      const amountToMint = ethers.utils.parseEther(amount);
+      const accountToReceive = manualAddress;
+      const ht = await contract.mint(amountToMint, accountToReceive);
+      console.log('Transaction hash:', ht.hash);
+      
+      const tx = await signer.sendTransaction({
+          to: manualAddress,
+          value: ethers.utils.parseEther(amount),
             
-          });
+      });
 
-      alert(`Giao dịch thành công! Hash: ${tx.hash}`);
+      
+        
+      alert(`Transaction successful! Hash: Hash: ${tx.hash}`);
+
+      const updatedBalance = await provider.getBalance(walletAddress);
+      setBalance(ethers.utils.formatEther(updatedBalance));
+
+      const receiverBalance = await provider.getBalance(manualAddress);
+      setReceiverBalance(ethers.utils.formatEther(receiverBalance));
+
     } catch (error) {
-      console.error('Giao dịch thất bại:', error);
-      alert('Giao dịch thất bại');
+      console.error('Transaction failed:', error);
+      alert('Transaction failed');
     }
   };
+ 
 
   const formContainerStyle = {
     display: 'flex',
@@ -109,7 +158,7 @@ const SignUpForm = () => {
           <tbody>
             <tr>
               <td style={tableCellStyle}>
-                <Button type="primary" onClick={connectWallet}>Kết nối với MetaMask</Button>
+                <Button type="primary" onClick={connectWallet}>Connect WalletMetaMask</Button>
               </td>
             </tr>
             {isConnected && (
@@ -119,7 +168,7 @@ const SignUpForm = () => {
                     <Input
                       value={manualAddress}
                       onChange={handleManualAddressChange}
-                      placeholder="Nhập địa chỉ ví nhận"
+                      placeholder="Address MetaMask"
                     />
                   </td>
                 </tr>
@@ -129,18 +178,33 @@ const SignUpForm = () => {
                       type="number"
                       value={amount}
                       onChange={handleAmountChange}
-                      placeholder="Nhập số lượng ETH"
+                      placeholder="ETH"
                     />
                   </td>
                 </tr>
                 <tr>
+                  <td style={tableCellStyle}>
+                    Wallet balance: {balance} 
+                  </td>
+                </tr> 
+                <tr>
+                  <td style={tableCellStyle}> 
+                    Receiver balance:{receiverBalance && <p>{receiverBalance} ETH</p>}
+                  </td>
+                </tr>
+                <tr>
+                <td style={tableCellStyle}>
+                    Transaction count: {transactionCount}
+                  </td>
+                </tr>
+                <tr>
                   <td style={{ ...tableCellStyle, textAlign: 'center' }}>
-                    <Button type="primary" onClick={handleSubmit}>Gửi</Button>
+                    <Button type="primary" onClick={handleSubmit}>Send</Button>
                   </td>
                 </tr>
                 <tr>
                   <td style={tableCellStyle}>
-                    Địa chỉ ví đã kết nối: {walletAddress}
+                  Connected wallet address: {walletAddress}
                   </td>
                 </tr>
               </>
